@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Frontend build output
+/dist/
+/dist-ssr/
+/build/
+*.tsbuildinfo
+.vite/
+
+# Foundry build output and cache.
+# contracts/out is ignored except the ReleaseSplit artifact, which
+# src/lib/releaseplit-contract.ts imports for the ABI at build time.
+contracts/out/*
+!contracts/out/ReleaseSplit.sol/
+contracts/cache/
+contracts/broadcast/
+/out/
+/cache/
+/broadcast/
+
+# Credentials and secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+keystore/
+credentials.json
+.npmrc
+.secret*
+
+# Arc Studio CLI local sync state
+.arc-studio/
+
+# Logs and temporary files
+console.jsonl
+*.log
+tmp/
+temp/
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db

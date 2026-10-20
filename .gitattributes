@@ -1,0 +1,2 @@
+# Keep LF line endings so files stay byte-identical to the Arc Studio workspace.
+* text=auto eol=lf
