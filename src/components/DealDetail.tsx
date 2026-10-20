@@ -73,14 +73,22 @@ export function DealDetail({
     data: releaseHash,
     isPending: releasePending,
   } = useWriteContract();
-  const { isLoading: releaseConfirming, isSuccess: releaseSuccess } = useWaitForTransactionReceipt({ hash: releaseHash });
+  const {
+    data: releaseReceipt,
+    isLoading: releaseConfirming,
+    isError: releaseReceiptError,
+  } = useWaitForTransactionReceipt({ hash: releaseHash, chainId: ARC_TESTNET_CHAIN_ID });
 
   const {
     writeContract: doRefund,
     data: refundHash,
     isPending: refundPending,
   } = useWriteContract();
-  const { isLoading: refundConfirming, isSuccess: refundSuccess } = useWaitForTransactionReceipt({ hash: refundHash });
+  const {
+    data: refundReceipt,
+    isLoading: refundConfirming,
+    isError: refundReceiptError,
+  } = useWaitForTransactionReceipt({ hash: refundHash, chainId: ARC_TESTNET_CHAIN_ID });
 
   // ── Fund hooks (unconditional, before early returns) ────────────────────────
 
@@ -158,9 +166,29 @@ export function DealDetail({
     }
   }, [fundReceiptError, refetch, refetchAllowance]);
 
-  if (releaseSuccess || refundSuccess) {
-    void refetch();
-  }
+  // Release receipt effects
+  useEffect(() => {
+    if (releaseReceipt?.status === 'success') {
+      toast.success('Release confirmed! Funds distributed.');
+      void refetch();
+    }
+  }, [releaseReceipt, refetch]);
+
+  useEffect(() => {
+    if (releaseReceiptError) { void refetch(); }
+  }, [releaseReceiptError, refetch]);
+
+  // Refund receipt effects
+  useEffect(() => {
+    if (refundReceipt?.status === 'success') {
+      toast.success('Refund confirmed! USDC returned to payer.');
+      void refetch();
+    }
+  }, [refundReceipt, refetch]);
+
+  useEffect(() => {
+    if (refundReceiptError) { void refetch(); }
+  }, [refundReceiptError, refetch]);
 
   if (isLoading) {
     return (
@@ -214,7 +242,7 @@ export function DealDetail({
       args: [dealId],
       chainId: ARC_TESTNET_CHAIN_ID,
     }, {
-      onSuccess: () => toast.success('Release confirmed! Funds distributed.'),
+      onSuccess: () => toast.info('Release submitted.'),
       onError: (err) => toast.error(parseOnchainError(err)),
     });
   }
@@ -228,7 +256,7 @@ export function DealDetail({
       args: [dealId],
       chainId: ARC_TESTNET_CHAIN_ID,
     }, {
-      onSuccess: () => toast.success('Refund confirmed! USDC returned to payer.'),
+      onSuccess: () => toast.info('Refund submitted.'),
       onError: (err) => toast.error(parseOnchainError(err)),
     });
   }
@@ -343,6 +371,19 @@ export function DealDetail({
           <p className="text-xs" style={{ color: 'var(--muted)' }}>
             As the approver, you can release funds to all recipients now.
           </p>
+          {(releaseReceiptError || releaseReceipt?.status === 'reverted') && (
+            <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
+              <XCircle className="h-4 w-4 shrink-0" />
+              <span>Release failed or could not be confirmed.{' '}
+                {releaseHash && (
+                  <a href={`${EXPLORER}/tx/${releaseHash}`} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 underline underline-offset-2">
+                    View tx <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </span>
+            </div>
+          )}
           <button
             disabled={releasePending || releaseConfirming}
             onClick={handleRelease}
@@ -373,6 +414,19 @@ export function DealDetail({
           <p className="text-xs" style={{ color: 'var(--muted)' }}>
             The deadline has passed without approval. You can reclaim your USDC.
           </p>
+          {(refundReceiptError || refundReceipt?.status === 'reverted') && (
+            <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
+              <XCircle className="h-4 w-4 shrink-0" />
+              <span>Refund failed or could not be confirmed.{' '}
+                {refundHash && (
+                  <a href={`${EXPLORER}/tx/${refundHash}`} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 underline underline-offset-2">
+                    View tx <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </span>
+            </div>
+          )}
           <button
             disabled={refundPending || refundConfirming}
             onClick={handleRefund}
@@ -385,6 +439,16 @@ export function DealDetail({
               ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Refunding...</span>
               : <span className="flex items-center justify-center gap-2"><XCircle className="h-4 w-4" /> Refund to My Wallet</span>}
           </button>
+          {refundHash && (
+            <a
+              href={`${EXPLORER}/tx/${refundHash}`}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs"
+              style={{ color: 'var(--accent-hover)' }}
+            >
+              View refund tx <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
       )}
 

@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain, useReadContract } from 'wagmi';
 import { erc20Abi } from 'viem';
-import { Loader2, Plus, Trash2, ExternalLink } from 'lucide-react';
+import { Loader2, Plus, Trash2, ExternalLink, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   RELEASE_SPLIT_ABI,
@@ -56,7 +56,6 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
   const [recipients, setRecipients] = useState<RecipientRow[]>(defaultRecipients);
   const [step, setStep] = useState<'create' | 'approve' | 'fund' | 'done'>('create');
   const minDeadline = useMemo(() => new Date(Date.now() + 60_000).toISOString().slice(0, 16), []);
-  const [newDealId, setNewDealId] = useState<bigint | null>(null);
 
   // Read USDC balance
   const { data: usdcBalance } = useReadContract({
@@ -75,7 +74,12 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
     isPending: createPending,
     reset: resetCreate,
   } = useWriteContract();
-  const { isLoading: createConfirming, isSuccess: createSuccess, data: createReceipt } = useWaitForTransactionReceipt({ hash: createHash });
+  const {
+    data: createReceipt,
+    isLoading: createConfirming,
+    isError: createReceiptError,
+  } = useWaitForTransactionReceipt({ hash: createHash, chainId: ARC_TESTNET_CHAIN_ID });
+  const createConfirmed = createReceipt?.status === 'success';
 
   // Step 2 — USDC approve
   const {
@@ -84,7 +88,12 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
     isPending: approvePending,
     reset: resetApprove,
   } = useWriteContract();
-  const { isLoading: approveConfirming } = useWaitForTransactionReceipt({ hash: approveHash });
+  const {
+    data: approveReceipt,
+    isLoading: approveConfirming,
+    isError: approveReceiptError,
+  } = useWaitForTransactionReceipt({ hash: approveHash, chainId: ARC_TESTNET_CHAIN_ID });
+  const approveConfirmed = approveReceipt?.status === 'success';
 
   // Step 3 — fundDeal
   const {
@@ -93,26 +102,43 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
     isPending: fundPending,
     reset: resetFund,
   } = useWriteContract();
-  const { isLoading: fundConfirming, isSuccess: fundSuccess } = useWaitForTransactionReceipt({ hash: fundHash });
+  const {
+    data: fundReceipt,
+    isLoading: fundConfirming,
+    isError: fundReceiptError,
+  } = useWaitForTransactionReceipt({ hash: fundHash, chainId: ARC_TESTNET_CHAIN_ID });
+  const fundConfirmed = fundReceipt?.status === 'success';
 
-  // Extract dealId from createDeal receipt
-  const resolvedDealId: bigint | null = (() => {
-    if (newDealId !== null) return newDealId;
-    if (!createReceipt || !createSuccess) return null;
-    // DealCreated is the first indexed event — get from logs
-    // Topic[1] is indexed dealId
+  // Resolve dealId synchronously from the confirmed create receipt
+  const resolvedDealId: bigint | null = useMemo(() => {
+    if (!createConfirmed || !createReceipt) return null;
+    // DealCreated(uint256 indexed dealId, ...) — topic[1] is the indexed dealId
     for (const log of createReceipt.logs) {
-      if (log.address.toLowerCase() === CONTRACT_ADDRESS.toLowerCase()) {
-        // DealCreated(uint256 indexed dealId, ...) — first param indexed
-        if (log.topics.length >= 2) {
-          const id = BigInt(log.topics[1] as string);
-          setNewDealId(id);
-          return id;
-        }
+      if (log.address.toLowerCase() === CONTRACT_ADDRESS.toLowerCase() && log.topics.length >= 2) {
+        return BigInt(log.topics[1] as string);
       }
     }
     return null;
-  })();
+  }, [createConfirmed, createReceipt]);
+
+  // Advance to approve step once the deal id is available
+  useEffect(() => {
+    if (resolvedDealId !== null) setStep('approve');
+  }, [resolvedDealId]);
+
+  // Advance to fund step only after approve is confirmed onchain
+  useEffect(() => {
+    if (approveConfirmed) { setStep('fund'); }
+  }, [approveConfirmed]);
+
+  // Complete flow only after fund is confirmed onchain
+  useEffect(() => {
+    if (fundConfirmed) {
+      toast.success(`Deposit confirmed! Deal #${resolvedDealId?.toString()} is now funded.`);
+      setStep('done');
+      onCreated?.();
+    }
+  }, [fundConfirmed, resolvedDealId, onCreated]);
 
   const parsedAmount = parseUSDC(amount);
   const totalPctVal = totalPct(recipients);
@@ -156,7 +182,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
       args: [approver as `0x${string}`, wallets, bpsArr, parsedAmount, deadlineTs],
       chainId: ARC_TESTNET_CHAIN_ID,
     }, {
-      onSuccess: () => { setStep('approve'); },
+      onSuccess: () => toast.info('Deal creation submitted.'),
       onError: (err) => toast.error(parseOnchainError(err)),
     });
   }
@@ -170,7 +196,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
       args: [CONTRACT_ADDRESS, parsedAmount],
       chainId: ARC_TESTNET_CHAIN_ID,
     }, {
-      onSuccess: () => { setStep('fund'); },
+      onSuccess: () => toast.info('Approval submitted.'),
       onError: (err) => toast.error(parseOnchainError(err)),
     });
   }
@@ -185,7 +211,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
       args: [resolvedDealId],
       chainId: ARC_TESTNET_CHAIN_ID,
     }, {
-      onSuccess: () => { setStep('done'); onCreated?.(); },
+      onSuccess: () => toast.info('Deposit submitted.'),
       onError: (err) => toast.error(parseOnchainError(err)),
     });
   }
@@ -196,7 +222,6 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
     setAmount('');
     setDeadline('');
     setRecipients(defaultRecipients());
-    setNewDealId(null);
     resetCreate();
     resetApprove();
     resetFund();
@@ -205,7 +230,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
   const explorerBase = 'https://explorer.testnet.arc.io';
 
   // ——— Step: done ———
-  if (step === 'done' && fundSuccess) {
+  if (step === 'done' && fundConfirmed) {
     return (
       <div className="rounded-3xl p-6 space-y-4" style={glass.card}>
         <div className="flex items-center gap-2">
@@ -248,8 +273,21 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
             Send {formatUSDC(parsedAmount)} USDC to the escrow contract. Deal #{resolvedDealId?.toString()}.
           </p>
         </div>
+        {(fundReceiptError || fundReceipt?.status === 'reverted') && (
+          <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
+            <XCircle className="h-4 w-4 shrink-0" />
+            <span>Deposit failed or could not be confirmed. Open this deal from All Deals to check its status.{' '}
+              {fundHash && (
+                <a href={`${explorerBase}/tx/${fundHash}`} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 underline underline-offset-2">
+                  View tx <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </span>
+          </div>
+        )}
         <button
-          disabled={fundPending || fundConfirming}
+          disabled={fundPending || fundConfirming || fundConfirmed}
           onClick={handleFund}
           className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
           style={{ background: 'var(--accent)' }}
@@ -290,8 +328,21 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
             <a href={`${explorerBase}/tx/${createHash}`} target="_blank" rel="noopener noreferrer" className="underline">View tx</a>
           </p>
         )}
+        {(approveReceiptError || approveReceipt?.status === 'reverted') && (
+          <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
+            <XCircle className="h-4 w-4 shrink-0" />
+            <span>Approval failed or could not be confirmed.{' '}
+              {approveHash && (
+                <a href={`${explorerBase}/tx/${approveHash}`} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 underline underline-offset-2">
+                  View tx <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </span>
+          </div>
+        )}
         <button
-          disabled={approvePending || approveConfirming}
+          disabled={approvePending || approveConfirming || approveConfirmed}
           onClick={handleApprove}
           className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
           style={{ background: 'var(--accent)' }}
@@ -473,8 +524,27 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
       </div>
 
       {/* CTA */}
+      {(createReceiptError || createReceipt?.status === 'reverted') && (
+        <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
+          <XCircle className="h-4 w-4 shrink-0" />
+          <span>Deal creation failed or could not be confirmed. Check the transaction before retrying to avoid creating a duplicate deal.{' '}
+            {createHash && (
+              <a href={`${explorerBase}/tx/${createHash}`} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-0.5 underline underline-offset-2">
+                View tx <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </span>
+        </div>
+      )}
+      {createConfirmed && resolvedDealId === null && (
+        <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
+          <XCircle className="h-4 w-4 shrink-0" />
+          <span>Deal created, but its ID could not be read. Open it from All Deals to fund it.</span>
+        </div>
+      )}
       <button
-        disabled={!isConnected || createPending || createConfirming}
+        disabled={!isConnected || createPending || createConfirming || createConfirmed}
         onClick={wrongChain ? () => switchChain({ chainId: ARC_TESTNET_CHAIN_ID }) : handleCreate}
         className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
         style={{ background: 'var(--accent)' }}
