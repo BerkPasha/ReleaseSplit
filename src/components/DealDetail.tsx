@@ -1,11 +1,14 @@
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount, useSwitchChain } from 'wagmi';
+import { erc20Abi } from 'viem';
 import { ArrowLeft, Loader2, ExternalLink, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useEffect } from 'react';
 import {
   RELEASE_SPLIT_ABI,
   CONTRACT_ADDRESS,
   ARC_TESTNET_CHAIN_ID,
   DEAL_STATE_LABELS,
+  USDC_ADDRESS,
 } from '../lib/releaseplit-contract';
 import { formatAddress, formatUSDC, formatDeadline, deadlineStatus, parseOnchainError } from '../lib/utils';
 
@@ -79,6 +82,82 @@ export function DealDetail({
   } = useWriteContract();
   const { isLoading: refundConfirming, isSuccess: refundSuccess } = useWaitForTransactionReceipt({ hash: refundHash });
 
+  // ── Fund hooks (unconditional, before early returns) ────────────────────────
+
+  const {
+    data: allowanceData,
+    isLoading: allowanceLoading,
+    isFetching: allowanceFetching,
+    isError: allowanceError,
+    refetch: refetchAllowance,
+  } = useReadContract({
+    address: USDC_ADDRESS,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: [address ?? '0x0000000000000000000000000000000000000000', CONTRACT_ADDRESS],
+    chainId: ARC_TESTNET_CHAIN_ID,
+    query: { enabled: !!address },
+  });
+
+  const {
+    data: balanceData,
+    isLoading: balanceLoading,
+    isError: balanceError,
+    refetch: refetchBalance,
+  } = useReadContract({
+    address: USDC_ADDRESS,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [address ?? '0x0000000000000000000000000000000000000000'],
+    chainId: ARC_TESTNET_CHAIN_ID,
+    query: { enabled: !!address },
+  });
+
+  const {
+    writeContract: doApprove,
+    data: approveHash,
+    isPending: approvePending,
+    reset: resetApprove,
+  } = useWriteContract();
+  const {
+    data: approveReceipt,
+    isLoading: approveConfirming,
+    isError: approveReceiptError,
+  } = useWaitForTransactionReceipt({ hash: approveHash, chainId: ARC_TESTNET_CHAIN_ID });
+
+  const {
+    writeContract: doFund,
+    data: fundHash,
+    isPending: fundPending,
+    reset: resetFund,
+  } = useWriteContract();
+  const {
+    data: fundReceipt,
+    isLoading: fundConfirming,
+    isError: fundReceiptError,
+  } = useWaitForTransactionReceipt({ hash: fundHash, chainId: ARC_TESTNET_CHAIN_ID });
+
+  // Refetch allowance after approve receipt (success or error — keep onchain state fresh)
+  useEffect(() => {
+    if (approveReceipt || approveReceiptError) {
+      void refetchAllowance();
+    }
+  }, [approveReceipt, approveReceiptError, refetchAllowance]);
+
+  // Refetch deal + allowance + balance after fund receipt (success or error)
+  useEffect(() => {
+    if (fundReceipt?.status === 'success') {
+      toast.success('Deposit confirmed! Deal is now funded.');
+      void Promise.all([refetch(), refetchAllowance(), refetchBalance()]);
+    }
+  }, [fundReceipt, refetch, refetchAllowance, refetchBalance]);
+
+  useEffect(() => {
+    if (fundReceiptError) {
+      void Promise.all([refetch(), refetchAllowance()]);
+    }
+  }, [fundReceiptError, refetch, refetchAllowance]);
+
   if (releaseSuccess || refundSuccess) {
     void refetch();
   }
@@ -111,6 +190,20 @@ export function DealDetail({
   const isPayer = !!address && address.toLowerCase() === (payer as string).toLowerCase();
   const canRelease = state === 1 && isApprover && dlStatus === 'active';
   const canRefund = state === 1 && isPayer && dlStatus === 'expired';
+
+  // ── Fund section derived values ─────────────────────────────────────────────
+  const allowance: bigint = typeof allowanceData === 'bigint' ? allowanceData : 0n;
+  const balance: bigint = typeof balanceData === 'bigint' ? balanceData : 0n;
+  const readFailed = allowanceError || balanceError;
+  const readLoading = allowanceLoading || balanceLoading;
+  // Keep fund section hidden once deposit receipt is confirmed successful
+  const fundConfirmed = fundReceipt?.status === 'success';
+  // Approval: successful receipt
+  const approveConfirmed = approveReceipt?.status === 'success';
+  // After approve receipt lands we must wait for the in-flight allowance refetch (isFetching)
+  const allowanceRefreshing = approveConfirmed && allowanceFetching;
+  const needsApprove = !fundConfirmed && allowance < amount;
+  const hasEnoughBalance = balance >= amount;
 
   function handleRelease() {
     if (wrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
@@ -305,6 +398,236 @@ export function DealDetail({
           ) : isPayer && dlStatus === 'active' ? (
             <p style={{ color: 'var(--muted)' }}>Waiting for the approver to release funds before {formatDeadline(deadline)}.</p>
           ) : null}
+        </div>
+      )}
+
+      {/* ── Deposit confirmed notice — outside state===0 so it persists after deal flips Funded */}
+      {fundConfirmed && (
+        <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium" style={{ background: 'rgba(26,128,71,0.10)', color: 'var(--success)' }}>
+          <CheckCircle className="h-4 w-4 shrink-0" />
+          <span>Deposit confirmed.{' '}
+            {fundHash && (
+              <a href={`${EXPLORER}/tx/${fundHash}`} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-0.5 underline underline-offset-2">
+                View deposit tx <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* ── Fund this deal (state 0 only) ─────────────────────────────────── */}
+      {state === 0 && (
+        <div className="rounded-3xl p-5 space-y-3" style={glass.card}>
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Fund this deal</h3>
+
+          {/* Fund receipt failed (isError covers wagmi throw on reverted + fetch failure) */}
+          {(fundReceiptError || fundReceipt?.status === 'reverted') && (
+            <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
+              <XCircle className="h-4 w-4 shrink-0" />
+              <span>Deposit failed or could not be confirmed.{' '}
+                {fundHash && (
+                  <a href={`${EXPLORER}/tx/${fundHash}`} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 underline underline-offset-2">
+                    View tx <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </span>
+            </div>
+          )}
+
+          {/* Approve receipt failed (isError covers wagmi throw on reverted + fetch failure) */}
+          {(approveReceiptError || approveReceipt?.status === 'reverted') && (
+            <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
+              <XCircle className="h-4 w-4 shrink-0" />
+              <span>Approval failed or could not be confirmed.{' '}
+                {approveHash && (
+                  <a href={`${EXPLORER}/tx/${approveHash}`} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 underline underline-offset-2">
+                    View tx <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </span>
+            </div>
+          )}
+
+          {/* Main action area — hide once deposit confirmed */}
+          {!fundConfirmed && (() => {
+            // (a) not connected
+            if (!isConnected || !address) {
+              return (
+                <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                  Connect the payer wallet ({formatAddress(payer)}) to fund this deal.
+                </p>
+              );
+            }
+
+            // (b) connected but not the payer
+            if (!isPayer) {
+              return (
+                <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                  Only the payer ({formatAddress(payer)}) can fund this deal. Waiting for their deposit.
+                </p>
+              );
+            }
+
+            // (c) payer, deadline expired
+            if (dlStatus === 'expired') {
+              return (
+                <p className="text-sm" style={{ color: 'var(--danger)' }}>
+                  The deadline has passed. The approver can no longer release funds — depositing now would only allow an immediate refund.
+                </p>
+              );
+            }
+
+            // (d) wrong chain
+            if (wrongChain) {
+              return (
+                <button
+                  onClick={() => switchChain({ chainId: ARC_TESTNET_CHAIN_ID })}
+                  className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99]"
+                  style={{ background: 'var(--accent)' }}
+                >
+                  Switch to Arc Testnet
+                </button>
+              );
+            }
+
+            // (e) read error
+            if (readFailed) {
+              return (
+                <div className="flex items-center gap-3">
+                  <p className="text-sm flex-1" style={{ color: 'var(--danger)' }}>
+                    Could not read your USDC allowance/balance.
+                  </p>
+                  <button
+                    onClick={() => { void refetchAllowance(); void refetchBalance(); }}
+                    className="rounded-xl px-3 py-1.5 text-xs font-semibold"
+                    style={{ background: 'rgba(186,43,76,0.10)', color: 'var(--danger)' }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              );
+            }
+
+            // (f) loading
+            if (readLoading) {
+              return (
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Checking USDC allowance...
+                </div>
+              );
+            }
+
+            // (g) insufficient balance
+            if (!hasEnoughBalance) {
+              return (
+                <div className="space-y-1">
+                  <p className="text-sm" style={{ color: 'var(--danger)' }}>
+                    Insufficient USDC balance.
+                  </p>
+                  <p className="text-xs tabular-nums" style={{ color: 'var(--muted)' }}>
+                    Your balance: {formatUSDC(balance)} USDC — Required: {formatUSDC(amount)} USDC
+                  </p>
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                    Add USDC to your wallet to proceed.
+                  </p>
+                </div>
+              );
+            }
+
+            // (h) needs approve
+            if (needsApprove) {
+              return (
+                <div className="space-y-2">
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>Step 1 of 2 — Approve the contract to spend your USDC.</p>
+                  <button
+                    disabled={approvePending || approveConfirming || allowanceRefreshing}
+                    onClick={() => {
+                      doApprove(
+                        {
+                          address: USDC_ADDRESS,
+                          abi: erc20Abi,
+                          functionName: 'approve',
+                          args: [CONTRACT_ADDRESS, amount],
+                          chainId: ARC_TESTNET_CHAIN_ID,
+                        },
+                        {
+                          onSuccess: () => toast.info('Approval submitted.'),
+                          onError: (err) => { toast.error(parseOnchainError(err)); resetApprove(); },
+                        },
+                      );
+                    }}
+                    className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+                    style={{ background: 'var(--accent)' }}
+                  >
+                    {approvePending
+                      ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Confirm in wallet...</span>
+                      : approveConfirming
+                      ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Approving...</span>
+                      : allowanceRefreshing
+                      ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Checking allowance...</span>
+                      : <span>Approve {formatUSDC(amount)} USDC</span>}
+                  </button>
+                  {approveHash && (
+                    <a
+                      href={`${EXPLORER}/tx/${approveHash}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs"
+                      style={{ color: 'var(--accent-hover)' }}
+                    >
+                      View approve tx <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              );
+            }
+
+            // (i) allowance sufficient — fund
+            return (
+              <div className="space-y-2">
+                <p className="text-xs" style={{ color: 'var(--muted)' }}>Step 2 of 2 — Deposit USDC into the escrow contract.</p>
+                <button
+                  disabled={fundPending || fundConfirming}
+                  onClick={() => {
+                    doFund(
+                      {
+                        address: CONTRACT_ADDRESS,
+                        abi: RELEASE_SPLIT_ABI,
+                        functionName: 'fundDeal',
+                        args: [dealId],
+                        chainId: ARC_TESTNET_CHAIN_ID,
+                      },
+                      {
+                        onSuccess: () => toast.info('Deposit submitted.'),
+                        onError: (err) => { toast.error(parseOnchainError(err)); resetFund(); },
+                      },
+                    );
+                  }}
+                  className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ background: 'var(--success)' }}
+                >
+                  {fundPending
+                    ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Confirm in wallet...</span>
+                    : fundConfirming
+                    ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Depositing...</span>
+                    : <span className="flex items-center justify-center gap-2"><CheckCircle className="h-4 w-4" /> Deposit {formatUSDC(amount)} USDC</span>}
+                </button>
+                {fundHash && (
+                  <a
+                    href={`${EXPLORER}/tx/${fundHash}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs"
+                    style={{ color: 'var(--accent-hover)' }}
+                  >
+                    View deposit tx <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
