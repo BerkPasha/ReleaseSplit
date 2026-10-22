@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReleaseSplit Mainnet Deploy</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f7f7f5; --fg: #1d1d1b; --muted: #6b6b66; --card: #fff; --line: #e2e2dc; --pass: #1a7f47; --fail: #b4233c; --accent: #2456c9; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #141413; --fg: #ecece8; --muted: #9a9a93; --card: #1e1e1c; --line: #33332f; --pass: #4cc38a; --fail: #ff6b81; --accent: #7aa2ff; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-top: 14px; }
+  .note { color: var(--muted); margin: 0; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  input { font: 13px ui-monospace, monospace; width: 100%; box-sizing: border-box; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); margin-bottom: 8px; }
+  ul { list-style: none; margin: 0; padding: 0; font: 13px/1.6 ui-monospace, monospace; overflow-wrap: anywhere; }
+  .pass { color: var(--pass); } .fail { color: var(--fail); } .info { color: var(--muted); }
+  #wallet, #tx { margin-top: 10px; font: 13px ui-monospace, monospace; overflow-wrap: anywhere; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>ReleaseSplit → Arc Mainnet</h1>
+  <p class="note">Deploys the exact tested creation bytecode from contracts/out/ReleaseSplit.sol/ReleaseSplit.json. Reads go to the official RPC; only Rabby signs.</p>
+
+  <section>
+    <h2>1. Wallet</h2>
+    <button id="connect">Connect Rabby</button>
+    <button id="switch" disabled>Switch to Arc Mainnet</button>
+    <div id="wallet">Not connected.</div>
+  </section>
+
+  <section>
+    <h2>2. Preflight checks</h2>
+    <ul id="checks"></ul>
+  </section>
+
+  <section>
+    <h2>3. Deploy</h2>
+    <button id="deploy" disabled>Deploy ReleaseSplit</button>
+    <div id="tx"></div>
+  </section>
+
+  <section>
+    <h2>4. Post-deploy verification</h2>
+    <input id="hash" placeholder="Deployment tx hash (0x…)" spellcheck="false">
+    <button id="verify">Verify</button>
+    <ul id="post"></ul>
+  </section>
+</main>
+
+<script>
+const RPC = 'https://rpc.mainnet.arc.io';
+const EXPLORER = 'https://explorer.arc.io';
+const CHAIN_ID = '0x13b2'; // 5042
+const USDC = '0x3600000000000000000000000000000000000000';
+// SHA-256 of the tested artifact (identical to the code live on Arc Testnet).
+const INITCODE_SHA256 = '31ba8a583a4ff1afbb76b81a323a8eaee0eb0b6c562b20b5db5e83e8dbd5e30e';
+const RUNTIME_SHA256 = '0445a9e5831c765c4bddeee78565c67bcde03788bbedc5a52acd0908887e7437';
+const ARC_MAINNET = {
+  chainId: CHAIN_ID,
+  chainName: 'Arc',
+  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+  rpcUrls: [RPC],
+  blockExplorerUrls: [EXPLORER],
+};
+const STORAGE_KEY = 'releasesplit-mainnet-deploy-tx';
+
+const $ = (id) => document.getElementById(id);
+let wallet = null;
+let account = null;
+let listening = false;
+let initcode = null;
+let runtime = null;
+let gasLimit = null;
+let ready = false;
+
+// EIP-6963 discovery picks Rabby even when another wallet owns window.ethereum.
+window.addEventListener('eip6963:announceProvider', (e) => {
+  if (e.detail?.info?.rdns === 'io.rabby') wallet = e.detail.provider;
+});
+window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+async function rpc(method, params = []) {
+  const res = await fetch(RPC, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  const body = await res.json();
+  if (body.error) throw new Error(`${method}: ${body.error.message}`);
+  return body.result;
+}
+
+async function sha256(hex) {
+  const bytes = new Uint8Array(hex.slice(2).match(/../g).map((h) => parseInt(h, 16)));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Native USDC (gas) has 18 decimals; the USDC ERC-20 view has 6.
+function fmt(raw, decimals) {
+  const s = BigInt(raw).toString().padStart(decimals + 1, '0');
+  return `${s.slice(0, -decimals)}.${s.slice(-decimals)}`;
+}
+
+function row(list, ok, text) {
+  const li = document.createElement('li');
+  li.className = ok === null ? 'info' : ok ? 'pass' : 'fail';
+  li.textContent = `${ok === null ? 'INFO' : ok ? 'PASS' : 'FAIL'}  ${text}`;
+  $(list).append(li);
+  return ok !== false;
+}
+
+function link(path, label) {
+  return `<a href="${EXPLORER}/${path}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+}
+
+function loadHash() {
+  try { return localStorage.getItem(STORAGE_KEY); } catch { return null; }
+}
+function saveHash(hash) {
+  try { localStorage.setItem(STORAGE_KEY, hash); } catch { /* display below is the record */ }
+}
+
+async function runChecks() {
+  ready = false;
+  $('deploy').disabled = true;
+  $('checks').replaceChildren();
+  let ok = true;
+  try {
+    ok = row('checks', await sha256(initcode) === INITCODE_SHA256, `creation bytecode matches tested artifact (${(initcode.length - 2) / 2} bytes, no constructor args)`) && ok;
+    ok = row('checks', await sha256(runtime) === RUNTIME_SHA256, 'runtime bytecode matches tested artifact') && ok;
+    ok = row('checks', await rpc('eth_chainId') === CHAIN_ID, `official RPC is Arc Mainnet, chain 5042 (${RPC})`) && ok;
+    ok = row('checks', BigInt(await rpc('eth_call', [{ to: USDC, data: '0x313ce567' }, 'latest'])) === 6n, 'USDC at 0x3600…0000 reports ERC-20 decimals = 6') && ok;
+    if (!account) {
+      row('checks', null, 'Connect Rabby to continue.');
+      return;
+    }
+    const walletChain = await wallet.request({ method: 'eth_chainId' });
+    ok = row('checks', walletChain === CHAIN_ID, `Rabby is on Arc Mainnet (wallet chain ${parseInt(walletChain, 16)})`) && ok;
+    if (walletChain !== CHAIN_ID) return;
+
+    const gas = BigInt(await rpc('eth_estimateGas', [{ from: account, data: initcode, value: '0x0' }]));
+    gasLimit = (gas * 125n) / 100n;
+    const gasPrice = BigInt(await rpc('eth_gasPrice'));
+    const native = BigInt(await rpc('eth_getBalance', [account, 'latest']));
+    const erc20 = BigInt(await rpc('eth_call', [{ to: USDC, data: `0x70a08231${account.slice(2).toLowerCase().padStart(64, '0')}` }, 'latest']));
+    row('checks', null, `gas estimate ${gas}; gas limit sent ${gasLimit}; gas price ${Number(gasPrice) / 1e9} gwei (Arc minimum 20)`);
+    row('checks', null, `expected fee ~${fmt(gas * gasPrice, 18)} USDC`);
+    row('checks', null, `balance ${fmt(native, 18)} USDC native (18 dec) = ${fmt(erc20, 6)} USDC ERC-20 (6 dec)`);
+    ok = row('checks', native >= gasLimit * gasPrice * 2n, 'deployer can cover gas with 2x margin') && ok;
+  } catch (error) {
+    ok = row('checks', false, error.message);
+  }
+  ready = ok;
+  $('deploy').disabled = !ok;
+}
+
+async function verify(hash) {
+  $('post').replaceChildren();
+  row('post', null, `waiting for ${hash} on Arc Mainnet…`);
+  let receipt = null;
+  for (let i = 0; i < 300 && !receipt; i++) {
+    receipt = await rpc('eth_getTransactionReceipt', [hash]);
+    if (!receipt) await new Promise((r) => setTimeout(r, 2000));
+  }
+  $('post').replaceChildren();
+  if (!receipt) {
+    row('post', false, 'not mined after 10 minutes; check Rabby and the explorer, then press Verify again');
+    return;
+  }
+  const tx = await rpc('eth_getTransactionByHash', [hash]);
+  row('post', receipt.status === '0x1', 'transaction succeeded');
+  row('post', tx.to === null, 'transaction is a contract creation');
+  row('post', BigInt(tx.value) === 0n, 'no USDC value sent');
+  row('post', tx.input.toLowerCase() === initcode, 'deploy data equals tested creation bytecode exactly');
+  const address = receipt.contractAddress;
+  if (!row('post', !!address, `contract address ${address ?? 'missing'}`)) return;
+  row('post', (await rpc('eth_getCode', [address, 'latest'])).toLowerCase() === runtime, 'onchain runtime bytecode equals tested artifact');
+  row('post', BigInt(await rpc('eth_call', [{ to: address, data: '0x02d45457' }, 'latest'])) === BigInt(USDC), 'usdcAddress() = 0x3600…0000');
+  row('post', BigInt(await rpc('eth_call', [{ to: address, data: '0xeadb3c9c' }, 'latest'])) === 0n, 'dealCount() = 0');
+  row('post', null, `fee paid ${fmt(BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice), 18)} USDC (gas used ${BigInt(receipt.gasUsed)})`);
+  const li = document.createElement('li');
+  li.innerHTML = `${link(`address/${address}`, 'Contract on explorer')} · ${link(`tx/${hash}`, 'Deploy tx')}`;
+  $('post').append(li);
+}
+
+$('connect').onclick = async () => {
+  if (!wallet && window.ethereum?.isRabby) wallet = window.ethereum;
+  if (!wallet) {
+    $('wallet').textContent = 'Rabby not detected. Install/enable the Rabby extension and reload this page.';
+    return;
+  }
+  try {
+    [account] = await wallet.request({ method: 'eth_requestAccounts' });
+  } catch (error) {
+    $('wallet').textContent = `Connection rejected: ${error.message}`;
+    return;
+  }
+  if (!listening && wallet.on) {
+    listening = true;
+    wallet.on('accountsChanged', (accounts) => { account = accounts[0] ?? null; showAccount(); runChecks(); });
+    wallet.on('chainChanged', () => runChecks());
+  }
+  $('switch').disabled = false;
+  showAccount();
+  runChecks();
+};
+
+function showAccount() {
+  $('wallet').innerHTML = account ? `Deployer: ${link(`address/${account}`, account)}` : 'Not connected.';
+}
+
+$('switch').onclick = async () => {
+  try {
+    await wallet.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_ID }] });
+  } catch (error) {
+    try {
+      await wallet.request({ method: 'wallet_addEthereumChain', params: [ARC_MAINNET] });
+    } catch (addError) {
+      $('wallet').textContent = `Could not switch to Arc Mainnet: ${addError.message}`;
+      return;
+    }
+  }
+  runChecks();
+};
+
+$('deploy').onclick = async () => {
+  if (!ready) return;
+  const previous = loadHash();
+  if (previous && !confirm(`A deploy transaction was already sent from this page:\n${previous}\n\nDeploy ANOTHER contract anyway?`)) return;
+  $('deploy').disabled = true;
+  try {
+    if (await wallet.request({ method: 'eth_chainId' }) !== CHAIN_ID) throw new Error('Rabby is not on Arc Mainnet.');
+    const hash = await wallet.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: account, data: initcode, value: '0x0', gas: `0x${gasLimit.toString(16)}` }],
+    });
+    saveHash(hash);
+    $('hash').value = hash;
+    $('tx').innerHTML = `Sent: ${link(`tx/${hash}`, hash)}<br>Copy this hash before closing the page.`;
+    await verify(hash);
+  } catch (error) {
+    $('tx').textContent = `Not sent: ${error.message}`;
+    $('deploy').disabled = !ready;
+  }
+};
+
+$('verify').onclick = () => {
+  const hash = $('hash').value.trim();
+  if (/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+    verify(hash);
+    return;
+  }
+  $('post').replaceChildren();
+  row('post', false, 'enter a 0x-prefixed 32-byte tx hash');
+};
+
+(async () => {
+  $('hash').value = loadHash() ?? '';
+  try {
+    const artifact = await (await fetch('/artifact.json', { cache: 'no-store' })).json();
+    initcode = artifact.bytecode.object.toLowerCase();
+    runtime = artifact.deployedBytecode.object.toLowerCase();
+  } catch (error) {
+    row('checks', false, `could not load artifact: ${error.message}`);
+    return;
+  }
+  runChecks();
+})();
+</script>
+</body>
+</html>
