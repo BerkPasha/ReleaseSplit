@@ -1,5 +1,12 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { Amount, gasTokenDecimalsFor, gasTokenToUsdc } from '@/onchain-money';
+
+// Gas units kept back by "Max" for createDeal + approve + fundDeal. Measured on Arc Mainnet at
+// ~390k (256k + 55k + 79k), so this leaves ~2.5x headroom for the gas limits a wallet sets.
+export const DEAL_FLOW_GAS_RESERVE = 1_000_000n;
+// Applied on top of the current max fee per gas, in case fees rise before the deposit lands.
+export const GAS_FEE_SAFETY_MULTIPLIER = 3n;
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -24,6 +31,27 @@ export function parseUSDC(value: string): bigint {
   const [whole = '0', frac = ''] = clean.split('.');
   const fracPadded = frac.slice(0, 6).padEnd(6, '0');
   return BigInt(whole) * 1_000_000n + BigInt(fracPadded);
+}
+
+/**
+ * Largest escrow amount (ERC-20 USDC, 6 decimals) that still leaves native USDC (18 decimals)
+ * for the deal's gas. On Arc both are one balance, so escrowing all of it makes the deposit revert.
+ * Never negative and never above the ERC-20 balance.
+ */
+export function maxDepositAmount(
+  chainId: number,
+  nativeBalance: bigint,
+  usdcBalance: bigint,
+  maxFeePerGas: bigint,
+): bigint {
+  const gasDecimals = gasTokenDecimalsFor(chainId);
+  const reserve = Amount.fromRaw(DEAL_FLOW_GAS_RESERVE * maxFeePerGas * GAS_FEE_SAFETY_MULTIPLIER, gasDecimals);
+  const spendable = Amount.fromRaw(nativeBalance, gasDecimals).sub(reserve);
+  if (!spendable.isPositive() || usdcBalance <= 0n) return 0n;
+
+  // Truncates: sub-microdollar dust stays behind rather than rounding up past the balance
+  const max = gasTokenToUsdc(chainId, spendable).raw;
+  return max < usdcBalance ? max : usdcBalance;
 }
 
 export function formatDeadline(ts: bigint): string {

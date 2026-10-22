@@ -1,15 +1,16 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain, useReadContract } from 'wagmi';
-import { erc20Abi } from 'viem';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain, useReadContract, useBalance, useEstimateFeesPerGas } from 'wagmi';
+import { erc20Abi, formatUnits } from 'viem';
 import { Loader2, Plus, Trash2, ExternalLink, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   RELEASE_SPLIT_ABI,
   CONTRACT_ADDRESS,
   USDC_ADDRESS,
+  USDC_DECIMALS,
   ARC_CHAIN_ID,
 } from '../lib/releaseplit-contract';
-import { formatUSDC, parseUSDC, parseOnchainError } from '../lib/utils';
+import { formatUSDC, parseUSDC, parseOnchainError, maxDepositAmount } from '../lib/utils';
 
 const glass = {
   card: {
@@ -66,6 +67,20 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
     chainId: ARC_CHAIN_ID,
     query: { enabled: !!address },
   });
+
+  // Gas is paid from the same USDC (native view, 18 decimals), so "Max" keeps some back for it
+  const { data: nativeBalance } = useBalance({
+    address,
+    chainId: ARC_CHAIN_ID,
+    query: { enabled: !!address },
+  });
+  const { data: fees } = useEstimateFeesPerGas({
+    chainId: ARC_CHAIN_ID,
+    query: { enabled: !!address },
+  });
+  const maxAmount = usdcBalance !== undefined && nativeBalance && fees
+    ? maxDepositAmount(ARC_CHAIN_ID, nativeBalance.value, usdcBalance, fees.maxFeePerGas)
+    : undefined;
 
   // Step 1 — createDeal
   const {
@@ -406,9 +421,9 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
           />
           <div className="mt-1 flex items-center justify-between">
             <span className="text-xs" style={{ color: 'var(--subtle)' }}>USDC</span>
-            {usdcBalance !== undefined && (
+            {maxAmount !== undefined && (
               <button
-                onClick={() => setAmount(formatUSDC(usdcBalance).replace(/,/g, ''))}
+                onClick={() => setAmount(formatUnits(maxAmount, USDC_DECIMALS))}
                 className="text-xs font-semibold"
                 style={{ color: 'var(--accent-hover)' }}
               >
