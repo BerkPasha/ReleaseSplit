@@ -3,11 +3,12 @@ import { WalletHeader } from './components/WalletHeader';
 import { CreateDealForm } from './components/CreateDealForm';
 import { DealList } from './components/DealList';
 import { DealDetail } from './components/DealDetail';
+import { Landing } from './components/Landing';
 
-type View = 'list' | 'create' | 'detail';
+type View = 'home' | 'list' | 'create' | 'detail';
 
 export default function App() {
-  const [view, setView] = useState<View>('list');
+  const [view, setView] = useState<View>('home');
   const [selectedDealId, setSelectedDealId] = useState<bigint | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -46,8 +47,21 @@ export default function App() {
         />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-md px-4 pb-12 pt-6">
-        <WalletHeader />
+      <div
+        className={`relative z-10 mx-auto pb-12 pt-6 ${
+          view === 'home' ? 'max-w-xl px-4 sm:px-6 lg:max-w-6xl lg:px-8' : 'max-w-md px-4'
+        }`}
+      >
+        <WalletHeader
+          onHome={() => setView('home')}
+          onAllDeals={view === 'home' ? () => setView('list') : undefined}
+        />
+
+        {view === 'home' && (
+          <Landing onViewDeals={() => setView('list')}>
+            <CreateDealForm onCreated={handleDealCreated} />
+          </Landing>
+        )}
 
         {view === 'list' && (
           <DealList
@@ -78,8 +92,8 @@ export default function App() {
         )}
 
         {/* Footer */}
-        <div className="mt-8 text-center text-xs" style={{ color: 'var(--subtle)' }}>
-          ReleaseSplit on Arc Mainnet &middot; USDC escrow + split &middot; No fees
+        <div className="mt-8 text-balance text-center text-xs" style={{ color: 'var(--subtle)' }}>
+          ReleaseSplit on Arc Mainnet &middot; USDC escrow + split &middot; No platform fees
         </div>
       </div>
     </div>
