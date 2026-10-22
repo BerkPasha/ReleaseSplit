@@ -79,7 +79,7 @@ export default function App() {
 
         {/* Footer */}
         <div className="mt-8 text-center text-xs" style={{ color: 'var(--subtle)' }}>
-          ReleaseSplit on Arc Testnet &middot; USDC escrow + split &middot; No fees
+          ReleaseSplit on Arc Mainnet &middot; USDC escrow + split &middot; No fees
         </div>
       </div>
     </div>

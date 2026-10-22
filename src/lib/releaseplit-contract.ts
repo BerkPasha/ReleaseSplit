@@ -1,6 +1,6 @@
 import artifact from '../../contracts/out/ReleaseSplit.sol/ReleaseSplit.json';
 
-export const CONTRACT_ADDRESS = '0x9472cf2e3cf010430f3daf84d71adec5d5f3fe71' as const;
+export const CONTRACT_ADDRESS = '0x8891521e3eb78a900e0664e802fb6549b4b4a819' as const;
 
 export const RELEASE_SPLIT_ABI = artifact.abi;
 
@@ -29,6 +29,6 @@ export interface DealData {
   state: DealState;
 }
 
-export const ARC_TESTNET_CHAIN_ID = 5042002;
+export const ARC_CHAIN_ID = 5042;
 export const USDC_ADDRESS = '0x3600000000000000000000000000000000000000' as const;
 export const USDC_DECIMALS = 6;

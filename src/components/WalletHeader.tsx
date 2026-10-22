@@ -1,6 +1,6 @@
 import { ConnectKitButton } from 'connectkit';
 import { useAccount } from 'wagmi';
-import { ARC_TESTNET_CHAIN_ID } from '../lib/releaseplit-contract';
+import { ARC_CHAIN_ID } from '../lib/releaseplit-contract';
 import { useSwitchChain } from 'wagmi';
 
 const glass = {
@@ -15,7 +15,7 @@ const glass = {
 export function WalletHeader() {
   const { chainId, isConnected } = useAccount();
   const { switchChain } = useSwitchChain();
-  const wrongChain = isConnected && chainId !== ARC_TESTNET_CHAIN_ID;
+  const wrongChain = isConnected && chainId !== ARC_CHAIN_ID;
 
   return (
     <header className="mb-6 flex items-center justify-between">
@@ -34,11 +34,11 @@ export function WalletHeader() {
       <div className="flex items-center gap-2">
         {wrongChain && (
           <button
-            onClick={() => switchChain({ chainId: ARC_TESTNET_CHAIN_ID })}
+            onClick={() => switchChain({ chainId: ARC_CHAIN_ID })}
             className="rounded-full px-3 py-1.5 text-xs font-semibold"
             style={{ background: 'var(--danger)', color: 'white' }}
           >
-            Switch to Arc Testnet
+            Switch to Arc Mainnet
           </button>
         )}
         <ConnectKitButton.Custom>

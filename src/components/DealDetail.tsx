@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import {
   RELEASE_SPLIT_ABI,
   CONTRACT_ADDRESS,
-  ARC_TESTNET_CHAIN_ID,
+  ARC_CHAIN_ID,
   DEAL_STATE_LABELS,
   USDC_ADDRESS,
 } from '../lib/releaseplit-contract';
@@ -27,7 +27,7 @@ const glass = {
 };
 
 const spectral = 'linear-gradient(90deg, #5fbeff, #af8ff4, #f05c6b, #ffcd83, #7ef1b3)';
-const EXPLORER = 'https://explorer.testnet.arc.io';
+const EXPLORER = 'https://explorer.arc.io';
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -58,14 +58,14 @@ export function DealDetail({
 }) {
   const { address, isConnected, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
-  const wrongChain = isConnected && chainId !== ARC_TESTNET_CHAIN_ID;
+  const wrongChain = isConnected && chainId !== ARC_CHAIN_ID;
 
   const { data, isLoading, refetch } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: RELEASE_SPLIT_ABI,
     functionName: 'getDeal',
     args: [dealId],
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_CHAIN_ID,
   });
 
   const {
@@ -77,7 +77,7 @@ export function DealDetail({
     data: releaseReceipt,
     isLoading: releaseConfirming,
     isError: releaseReceiptError,
-  } = useWaitForTransactionReceipt({ hash: releaseHash, chainId: ARC_TESTNET_CHAIN_ID });
+  } = useWaitForTransactionReceipt({ hash: releaseHash, chainId: ARC_CHAIN_ID });
 
   const {
     writeContract: doRefund,
@@ -88,7 +88,7 @@ export function DealDetail({
     data: refundReceipt,
     isLoading: refundConfirming,
     isError: refundReceiptError,
-  } = useWaitForTransactionReceipt({ hash: refundHash, chainId: ARC_TESTNET_CHAIN_ID });
+  } = useWaitForTransactionReceipt({ hash: refundHash, chainId: ARC_CHAIN_ID });
 
   // ── Fund hooks (unconditional, before early returns) ────────────────────────
 
@@ -103,7 +103,7 @@ export function DealDetail({
     abi: erc20Abi,
     functionName: 'allowance',
     args: [address ?? '0x0000000000000000000000000000000000000000', CONTRACT_ADDRESS],
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_CHAIN_ID,
     query: { enabled: !!address },
   });
 
@@ -117,7 +117,7 @@ export function DealDetail({
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: [address ?? '0x0000000000000000000000000000000000000000'],
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_CHAIN_ID,
     query: { enabled: !!address },
   });
 
@@ -131,7 +131,7 @@ export function DealDetail({
     data: approveReceipt,
     isLoading: approveConfirming,
     isError: approveReceiptError,
-  } = useWaitForTransactionReceipt({ hash: approveHash, chainId: ARC_TESTNET_CHAIN_ID });
+  } = useWaitForTransactionReceipt({ hash: approveHash, chainId: ARC_CHAIN_ID });
 
   const {
     writeContract: doFund,
@@ -143,7 +143,7 @@ export function DealDetail({
     data: fundReceipt,
     isLoading: fundConfirming,
     isError: fundReceiptError,
-  } = useWaitForTransactionReceipt({ hash: fundHash, chainId: ARC_TESTNET_CHAIN_ID });
+  } = useWaitForTransactionReceipt({ hash: fundHash, chainId: ARC_CHAIN_ID });
 
   // Refetch allowance after approve receipt (success or error — keep onchain state fresh)
   useEffect(() => {
@@ -234,13 +234,13 @@ export function DealDetail({
   const hasEnoughBalance = balance >= amount;
 
   function handleRelease() {
-    if (wrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (wrongChain) { switchChain({ chainId: ARC_CHAIN_ID }); return; }
     doRelease({
       address: CONTRACT_ADDRESS,
       abi: RELEASE_SPLIT_ABI,
       functionName: 'releaseDeal',
       args: [dealId],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_CHAIN_ID,
     }, {
       onSuccess: () => toast.info('Release submitted.'),
       onError: (err) => toast.error(parseOnchainError(err)),
@@ -248,13 +248,13 @@ export function DealDetail({
   }
 
   function handleRefund() {
-    if (wrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (wrongChain) { switchChain({ chainId: ARC_CHAIN_ID }); return; }
     doRefund({
       address: CONTRACT_ADDRESS,
       abi: RELEASE_SPLIT_ABI,
       functionName: 'refundDeal',
       args: [dealId],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_CHAIN_ID,
     }, {
       onSuccess: () => toast.info('Refund submitted.'),
       onError: (err) => toast.error(parseOnchainError(err)),
@@ -548,11 +548,11 @@ export function DealDetail({
             if (wrongChain) {
               return (
                 <button
-                  onClick={() => switchChain({ chainId: ARC_TESTNET_CHAIN_ID })}
+                  onClick={() => switchChain({ chainId: ARC_CHAIN_ID })}
                   className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99]"
                   style={{ background: 'var(--accent)' }}
                 >
-                  Switch to Arc Testnet
+                  Switch to Arc Mainnet
                 </button>
               );
             }
@@ -616,7 +616,7 @@ export function DealDetail({
                           abi: erc20Abi,
                           functionName: 'approve',
                           args: [CONTRACT_ADDRESS, amount],
-                          chainId: ARC_TESTNET_CHAIN_ID,
+                          chainId: ARC_CHAIN_ID,
                         },
                         {
                           onSuccess: () => toast.info('Approval submitted.'),
@@ -662,7 +662,7 @@ export function DealDetail({
                         abi: RELEASE_SPLIT_ABI,
                         functionName: 'fundDeal',
                         args: [dealId],
-                        chainId: ARC_TESTNET_CHAIN_ID,
+                        chainId: ARC_CHAIN_ID,
                       },
                       {
                         onSuccess: () => toast.info('Deposit submitted.'),

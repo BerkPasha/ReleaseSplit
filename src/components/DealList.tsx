@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useReadContract } from 'wagmi';
 import { Loader2, Plus } from 'lucide-react';
-import { RELEASE_SPLIT_ABI, CONTRACT_ADDRESS, ARC_TESTNET_CHAIN_ID } from '../lib/releaseplit-contract';
+import { RELEASE_SPLIT_ABI, CONTRACT_ADDRESS, ARC_CHAIN_ID } from '../lib/releaseplit-contract';
 import { DealCard } from './DealCard';
 
 const glass = {
@@ -27,7 +27,7 @@ export function DealList({
     address: CONTRACT_ADDRESS,
     abi: RELEASE_SPLIT_ABI,
     functionName: 'dealCount',
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_CHAIN_ID,
   });
 
   useEffect(() => {

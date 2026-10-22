@@ -1,6 +1,6 @@
 import { useReadContract } from 'wagmi';
 import { Loader2, Clock, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
-import { RELEASE_SPLIT_ABI, CONTRACT_ADDRESS, ARC_TESTNET_CHAIN_ID, DEAL_STATE_LABELS } from '../lib/releaseplit-contract';
+import { RELEASE_SPLIT_ABI, CONTRACT_ADDRESS, ARC_CHAIN_ID, DEAL_STATE_LABELS } from '../lib/releaseplit-contract';
 import { formatAddress, formatUSDC, formatDeadline, deadlineStatus } from '../lib/utils';
 
 const glass = {
@@ -54,7 +54,7 @@ export function DealCard({
     abi: RELEASE_SPLIT_ABI,
     functionName: 'getDeal',
     args: [dealId],
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_CHAIN_ID,
   });
 
   if (isLoading) {

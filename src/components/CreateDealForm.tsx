@@ -7,7 +7,7 @@ import {
   RELEASE_SPLIT_ABI,
   CONTRACT_ADDRESS,
   USDC_ADDRESS,
-  ARC_TESTNET_CHAIN_ID,
+  ARC_CHAIN_ID,
 } from '../lib/releaseplit-contract';
 import { formatUSDC, parseUSDC, parseOnchainError } from '../lib/utils';
 
@@ -48,7 +48,7 @@ function totalPct(rows: RecipientRow[]): number {
 export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
   const { address, isConnected, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
-  const wrongChain = isConnected && chainId !== ARC_TESTNET_CHAIN_ID;
+  const wrongChain = isConnected && chainId !== ARC_CHAIN_ID;
 
   const [approver, setApprover] = useState('');
   const [amount, setAmount] = useState('');
@@ -63,7 +63,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_CHAIN_ID,
     query: { enabled: !!address },
   });
 
@@ -78,7 +78,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
     data: createReceipt,
     isLoading: createConfirming,
     isError: createReceiptError,
-  } = useWaitForTransactionReceipt({ hash: createHash, chainId: ARC_TESTNET_CHAIN_ID });
+  } = useWaitForTransactionReceipt({ hash: createHash, chainId: ARC_CHAIN_ID });
   const createConfirmed = createReceipt?.status === 'success';
 
   // Step 2 — USDC approve
@@ -92,7 +92,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
     data: approveReceipt,
     isLoading: approveConfirming,
     isError: approveReceiptError,
-  } = useWaitForTransactionReceipt({ hash: approveHash, chainId: ARC_TESTNET_CHAIN_ID });
+  } = useWaitForTransactionReceipt({ hash: approveHash, chainId: ARC_CHAIN_ID });
   const approveConfirmed = approveReceipt?.status === 'success';
 
   // Step 3 — fundDeal
@@ -106,7 +106,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
     data: fundReceipt,
     isLoading: fundConfirming,
     isError: fundReceiptError,
-  } = useWaitForTransactionReceipt({ hash: fundHash, chainId: ARC_TESTNET_CHAIN_ID });
+  } = useWaitForTransactionReceipt({ hash: fundHash, chainId: ARC_CHAIN_ID });
   const fundConfirmed = fundReceipt?.status === 'success';
 
   // Resolve dealId synchronously from the confirmed create receipt
@@ -168,7 +168,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
   }, [isConnected, approver, address, parsedAmount, deadline, recipients, totalPctVal]);
 
   function handleCreate() {
-    if (wrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (wrongChain) { switchChain({ chainId: ARC_CHAIN_ID }); return; }
     if (validationError) { toast.error(validationError); return; }
 
     const deadlineTs = BigInt(Math.floor(new Date(deadline).getTime() / 1000));
@@ -180,7 +180,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
       abi: RELEASE_SPLIT_ABI,
       functionName: 'createDeal',
       args: [approver as `0x${string}`, wallets, bpsArr, parsedAmount, deadlineTs],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_CHAIN_ID,
     }, {
       onSuccess: () => toast.info('Deal creation submitted.'),
       onError: (err) => toast.error(parseOnchainError(err)),
@@ -188,13 +188,13 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
   }
 
   function handleApprove() {
-    if (wrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (wrongChain) { switchChain({ chainId: ARC_CHAIN_ID }); return; }
     doApprove({
       address: USDC_ADDRESS,
       abi: erc20Abi,
       functionName: 'approve',
       args: [CONTRACT_ADDRESS, parsedAmount],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_CHAIN_ID,
     }, {
       onSuccess: () => toast.info('Approval submitted.'),
       onError: (err) => toast.error(parseOnchainError(err)),
@@ -202,14 +202,14 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
   }
 
   function handleFund() {
-    if (wrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (wrongChain) { switchChain({ chainId: ARC_CHAIN_ID }); return; }
     if (resolvedDealId === null) { toast.error('Could not find deal ID. Please retry.'); return; }
     doFund({
       address: CONTRACT_ADDRESS,
       abi: RELEASE_SPLIT_ABI,
       functionName: 'fundDeal',
       args: [resolvedDealId],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_CHAIN_ID,
     }, {
       onSuccess: () => toast.info('Deposit submitted.'),
       onError: (err) => toast.error(parseOnchainError(err)),
@@ -227,7 +227,7 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
     resetFund();
   }
 
-  const explorerBase = 'https://explorer.testnet.arc.io';
+  const explorerBase = 'https://explorer.arc.io';
 
   // ——— Step: done ———
   if (step === 'done' && fundConfirmed) {
@@ -545,14 +545,14 @@ export function CreateDealForm({ onCreated }: { onCreated?: () => void }) {
       )}
       <button
         disabled={!isConnected || createPending || createConfirming || createConfirmed}
-        onClick={wrongChain ? () => switchChain({ chainId: ARC_TESTNET_CHAIN_ID }) : handleCreate}
+        onClick={wrongChain ? () => switchChain({ chainId: ARC_CHAIN_ID }) : handleCreate}
         className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
         style={{ background: 'var(--accent)' }}
       >
         {!isConnected
           ? 'Connect Wallet to Continue'
           : wrongChain
-          ? 'Switch to Arc Testnet'
+          ? 'Switch to Arc Mainnet'
           : createPending
           ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Confirm in wallet...</span>
           : createConfirming
