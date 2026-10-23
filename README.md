@@ -240,7 +240,7 @@ ReleaseSplit started in [Arc Studio](https://studio.arc.io/). The repository his
 - An automated security review and fixes during development. According to [`AGENTS.md`](AGENTS.md), no critical or high findings remained after two rounds of fixes, Slither reported only low and informational findings, and one of the fixes changed the share type from `uint8` to `uint16` (with `uint8`, no valid deal could have been created).
 - The chain and USDC decimal helpers in `src/onchain-facts.ts` and `src/onchain-money.ts`, which the app uses to convert between Arc's 18-decimal native USDC balance and the 6-decimal ERC-20 view.
 
-**Arc Studio project:** _TODO: add the Arc Studio project URL_
+**Arc Studio project:** [studio.arc.io/app/3a5f1576-c55a-4db2-bf6b-234956f3118d](https://studio.arc.io/app/3a5f1576-c55a-4db2-bf6b-234956f3118d)
 
 **After Arc Studio**
 
@@ -326,8 +326,8 @@ npx vite preview    # serves the built app locally
 | Mainnet contract | [`0x8891521e3eb78a900e0664e802fb6549b4b4a819`](https://explorer.arc.io/address/0x8891521e3eb78a900e0664e802fb6549b4b4a819) |
 | Deployment transaction | [`0x6b57…9db6`](https://explorer.arc.io/tx/0x6b57b351c71175e121006b4c828318df07f9caa6b2f4ae8a7928095ab6d49db6) |
 | Verified release transaction (Deal #3) | [`0xf2f5…69d1`](https://explorer.arc.io/tx/0xf2f57d37125cb5626893ffe0bf78dd366eb68e1511469289b441ea9e941c69d1) |
-| Arc Studio project | _TODO: add the Arc Studio project URL_ |
-| Demo video | _TODO: add the demo video link_ |
+| Arc Studio project | [studio.arc.io/app/3a5f1576-c55a-4db2-bf6b-234956f3118d](https://studio.arc.io/app/3a5f1576-c55a-4db2-bf6b-234956f3118d) |
+| Demo video | [youtu.be/jcKXmR3O0J4](https://youtu.be/jcKXmR3O0J4) |
 
 ## Future Possibilities
 
