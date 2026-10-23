@@ -20,12 +20,7 @@ export function WalletHeader({ onHome, onAllDeals }: { onHome?: () => void; onAl
   return (
     <header className="mb-6 flex items-center justify-between">
       <button onClick={onHome} className="focus-ring flex items-center gap-2 rounded-xl" aria-label="ReleaseSplit home">
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-xl"
-          style={{ background: 'var(--accent)' }}
-        >
-          <span className="text-sm font-bold text-white">RS</span>
-        </div>
+        <img src="/releasesplit-mark.png" alt="" className="h-8 w-8 rounded-xl" />
         <span className="display text-lg font-bold" style={{ color: 'var(--ink)' }}>
           ReleaseSplit
         </span>
